@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TMSN Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="/dashboard"><span class="brand-mark small">T</span><span>TMSN <small>MEETING DESK</small></span></a>
+    <div class="top-actions"><span class="local-tag"><i></i> LOCAL & PRIVATE</span><button id="logout" class="button ghost">Sign out</button></div>
+  </header>
+  <main class="shell">
+    <section class="intro">
+      <div><p class="eyebrow">THE MEETING, IN GOOD ORDER</p><h1>Tomorrow's roster</h1><p class="muted">A fair rotation. Every role covered. One clear plan.</p></div>
+      <div class="tomorrow-pill"><span>UP NEXT</span><strong id="tomorrow-label">Loading…</strong></div>
+    </section>
+    <div id="notice" class="notice" role="status"></div>
+    <section class="card report-card">
+      <div class="section-head">
+        <div><p class="eyebrow" id="report-kicker">DAILY REPORT</p><h2 id="report-date">Loading report…</h2><p class="muted" id="report-theme"></p></div>
+        <div class="status-actions"><span id="status-badge" class="status-badge">—</span><button id="generate" class="button ghost">Generate / refresh</button><button id="finalize" class="button secondary">Finalize</button><button id="complete" class="button primary">Complete</button></div>
+      </div>
+      <div class="report-grid" id="report-content"></div>
+      <div class="report-footer"><p><span class="legend-dot"></span>Replacement assignments are marked with an asterisk.</p><button id="copy-report" class="button ghost">Copy report text</button></div>
+    </section>
+    <div class="below-grid">
+      <section class="card">
+        <div class="section-head compact"><div><p class="eyebrow">SCHEDULE</p><h2>Reports archive</h2></div></div>
+        <label>Open a past meeting<select id="history-select"><option value="">Select a date…</option></select></label>
+        <button class="button secondary full-width space-top" id="show-tomorrow">Back to tomorrow</button>
+      </section>
+      <section class="card">
+        <div class="section-head compact"><div><p class="eyebrow">ONE-TIME AVAILABILITY</p><h2>OD or Leave</h2></div></div>
+        <p class="muted small-copy">Marking someone unavailable automatically finds a replacement and logs the change.</p>
+        <form id="availability-form" class="stack-form">
+          <label>Student<select id="availability-student" required></select></label>
+          <div class="form-row"><label>Type<select id="availability-type"><option value="OD">On Duty (OD)</option><option value="LEAVE">Leave</option></select></label><label>Date<input id="availability-date" type="date" required></label></div>
+          <button class="button secondary full-width">Save availability</button>
+        </form>
+      </section>
+    </div>
+    <section class="card">
+      <div class="section-head compact"><div><p class="eyebrow">FAIR ROTATION</p><h2>Active roster</h2></div><span id="roster-count" class="muted"></span></div>
+      <div class="roster-layout">
+        <form id="student-form" class="student-form">
+          <h3>Add a student</h3>
+          <label>Roll number<input name="rollNo" required></label>
+          <label>Full name<input name="name" required></label>
+          <label>Department<input name="dept"></label>
+          <button class="button primary full-width">Add to roster</button>
+        </form>
+        <div class="table-wrap"><table><thead><tr><th>ROTATION</th><th>STUDENT</th><th>DEPARTMENT</th><th>STATUS</th><th></th></tr></thead><tbody id="roster-body"></tbody></table><p id="empty-roster" class="empty hidden">No students in the roster yet. Add your real roster to get started.</p></div>
+      </div>
+    </section>
+    <details class="card advanced">
+      <summary><span><span class="eyebrow">OPTIONAL</span><strong>Advanced role override</strong></span><span class="muted">Manual changes are audited</span></summary>
+      <form id="override-form" class="form-row override-form">
+        <label>Role<select id="override-role" required></select></label>
+        <label>Student<select id="override-student" required></select></label>
+        <label>Seat<select id="override-seat"></select></label>
+        <button class="button secondary">Apply override</button>
+      </form>
+    </details>
+    <footer>Designed for a calm, well-run meeting <span>·</span> Asia/Kolkata</footer>
+  </main>
+  <script src="/dashboard.js"></script>
+</body>
+</html>

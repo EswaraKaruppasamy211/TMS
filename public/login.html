@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · TMSN</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="brand-mark">T</div>
+    <p class="eyebrow">LOCAL TOASTMASTERS MANAGEMENT</p>
+    <h1>Welcome back</h1>
+    <p class="muted">Sign in to manage the next TMSN meeting.</p>
+    <form id="login-form">
+      <label>Username<input name="username" autocomplete="username" required autofocus></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <p class="error" id="error" role="alert"></p>
+      <button class="button primary full-width" type="submit">Sign in <span>→</span></button>
+    </form>
+    <p class="login-foot">Private dashboard · accessible only on this computer</p>
+  </main>
+  <script src="/login.js"></script>
+</body>
+</html>
