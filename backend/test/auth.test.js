@@ -15,6 +15,13 @@ test('dashboard is gated behind configured admin login', async (context) => {
   const address = server.address();
   const base = `http://127.0.0.1:${address.port}`;
 
+  const stylesheet = await fetch(`${base}/styles.css`);
+  assert.equal(stylesheet.status, 200);
+  assert.match(stylesheet.headers.get('content-type'), /text\/css/);
+  const loginScript = await fetch(`${base}/login.js`);
+  assert.equal(loginScript.status, 200);
+  assert.match(loginScript.headers.get('content-type'), /javascript/);
+
   const unauthorized = await fetch(`${base}/api/dashboard`);
   assert.equal(unauthorized.status, 401);
   const dashboardRedirect = await fetch(`${base}/dashboard`, { redirect: 'manual' });

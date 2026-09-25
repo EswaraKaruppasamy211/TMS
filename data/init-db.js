@@ -1,5 +1,6 @@
-require('dotenv').config();
-const { initializeSchema, closePool } = require('../db');
+const path = require('node:path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { initializeSchema, closePool } = require('./db');
 
 initializeSchema()
   .then(() => console.log('PostgreSQL schema is ready. No student records were created.'))

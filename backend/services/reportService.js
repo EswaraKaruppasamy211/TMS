@@ -1,4 +1,4 @@
-const { query } = require('../db');
+const { query } = require('../../data/db');
 const { getTomorrowDate, generateSessionForDate, sessionDateKey } = require('./assignmentEngine');
 const { buildSessionReport } = require('./reportBuilder');
 

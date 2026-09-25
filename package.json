@@ -1,12 +1,12 @@
 {
-  "name": "tmsn-backend",
+  "name": "tmsn",
   "version": "1.0.0",
   "description": "Local TMSN dashboard and PostgreSQL assignment engine",
-  "main": "server.js",
+  "main": "backend/server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node backend/server.js",
     "test": "node --test",
-    "db:init": "node scripts/init-db.js"
+    "db:init": "node data/init-db.js"
   },
   "dependencies": {
     "dayjs": "^1.11.0",

@@ -2,6 +2,13 @@
 
 A private, localhost-only meeting roster dashboard backed by PostgreSQL. Supabase PostgreSQL is supported. The app binds only to `127.0.0.1`; its admin credentials and database connection are read only from environment variables.
 
+## Project structure
+
+- `frontend/` contains the HTML, CSS, and browser-side JavaScript.
+- `backend/` contains the Express server, application services, configuration, and tests.
+- `data/` contains the PostgreSQL schema, database access, and schema initialization script.
+- The root `package.json` provides the commands for the full application.
+
 ## Start locally
 
 1. Install Node.js 18 or later.
@@ -36,7 +43,7 @@ The database is not seeded. Add the real student roster in **Active roster** bef
 
 ## Database and security notes
 
-`db/schema.sql` is the repeatable PostgreSQL schema initializer; `npm run db:init` is safe to rerun. It creates tables and defaults only—no student data. The PostgreSQL schema replaces the former Mongoose persistence; MongoDB is not used.
+`data/db/schema.sql` is the repeatable PostgreSQL schema initializer; `npm run db:init` is safe to rerun. It creates tables and defaults only—no student data. The PostgreSQL schema replaces the former Mongoose persistence; MongoDB is not used.
 
 The dashboard uses a local in-memory Express session store, so signing out or restarting the process ends browser sessions. Session cookies are HTTP-only and SameSite strict. For local use, keep the browser on `127.0.0.1`; do not expose this development server to a network. PostgreSQL access is through `DATABASE_URL`. Supabase hosts use TLS.
 

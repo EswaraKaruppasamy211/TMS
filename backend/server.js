@@ -1,12 +1,13 @@
-require('dotenv').config();
 const path = require('node:path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const crypto = require('node:crypto');
 const express = require('express');
 const session = require('express-session');
-const { initializeSchema, closePool, query, withTransaction } = require('./db');
+const { initializeSchema, closePool, query, withTransaction } = require('../data/db');
 const engine = require('./services/assignmentEngine');
 const reports = require('./services/reportService');
 
+const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const PORT = Number(process.env.PORT || 3000);
 const HOST = '127.0.0.1';
 
@@ -35,13 +36,13 @@ function createApp() {
     saveUninitialized: false,
     cookie: { httpOnly: true, sameSite: 'strict', secure: false, maxAge: 8 * 60 * 60 * 1000 },
   }));
-  app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+  app.use(express.static(FRONTEND_DIR, { index: false }));
 
   const loginAttempts = new Map();
   app.get('/', (req, res) => res.redirect(req.session.authenticated ? '/dashboard' : '/login'));
   app.get('/login', (req, res) => {
     if (req.session.authenticated) return res.redirect('/dashboard');
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+    res.sendFile(path.join(FRONTEND_DIR, 'login.html'));
   });
   app.post('/auth/login', (req, res) => {
     const now = Date.now();
@@ -73,7 +74,7 @@ function createApp() {
     next();
   }
   app.post('/auth/logout', requireAuth, (req, res) => req.session.destroy(() => res.json({ ok: true })));
-  app.get('/dashboard', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+  app.get('/dashboard', requireAuth, (req, res) => res.sendFile(path.join(FRONTEND_DIR, 'dashboard.html')));
   app.use('/api', requireAuth);
   app.get('/api/dashboard', asyncRoute(async (req, res) => res.json(await reports.getTomorrowDashboard())));
   app.get('/api/reports', asyncRoute(async (req, res) => res.json({ dates: await reports.listReportDates() })));

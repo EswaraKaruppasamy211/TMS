@@ -1,7 +1,7 @@
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
-const { query, withTransaction } = require('../db');
+const { query, withTransaction } = require('../../data/db');
 const { ROLE_STRUCTURE, TIMEZONE } = require('../config/roles');
 
 dayjs.extend(utc);
