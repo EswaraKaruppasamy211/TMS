@@ -182,8 +182,8 @@ async function start() {
 }
 
 if (require.main === module) {
-  start().catch(() => {
-    console.error('TMSN could not start. Verify the required environment variables and PostgreSQL connectivity.');
+  start().catch((error) => {
+    console.error('TMSN could not start:', error?.message || error, error?.stack || '');
     process.exitCode = 1;
   });
 }
