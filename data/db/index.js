@@ -10,7 +10,7 @@ function getPool() {
     const parsed = new URL(process.env.DATABASE_URL);
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: parsed.hostname.includes('supabase.') ? { rejectUnauthorized: true } : undefined,
+      ssl: parsed.hostname.includes('supabase.') ? { rejectUnauthorized: false } : undefined,
       max: 5,
       idleTimeoutMillis: 30000,
     });
