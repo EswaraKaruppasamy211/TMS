@@ -103,3 +103,10 @@ test('assigns all 13 weekend roles to distinct eligible students', async () => {
     /Cannot assign 13 roles to 12 students/
   );
 });
+
+test('retains the previous leave-day pool as the next-day candidate pool', async () => {
+  const previousStudentIds = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const roster = Array.from({ length: 8 }, (_, index) => ({ id: previousStudentIds[index], name: `Student ${index + 1}` }));
+  const result = selectRotationPool(roster, 0, 5, new Set(['a']));
+  assert.deepEqual(result.pool.map((student) => student.id), ['b', 'c', 'd', 'e', 'f']);
+});

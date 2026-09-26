@@ -111,6 +111,32 @@ async function assignRolesToPool(pool, slots, date, client) {
   });
 }
 
+async function getRetainedCandidatePool(client, date, timezoneName = TIMEZONE) {
+  const previousDate = previousSessionDateKey(date, timezoneName);
+  const previousSession = await client.query('SELECT id FROM sessions WHERE report_date = $1', [previousDate]);
+  if (!previousSession.rowCount) return null;
+  const previousAssignments = await client.query(
+    'SELECT student_id AS "studentId" FROM assignments WHERE session_id = $1 ORDER BY slot_index',
+    [previousSession.rows[0].id]
+  );
+  if (!previousAssignments.rowCount) return null;
+  const previousStudentIds = previousAssignments.rows.map((row) => row.studentId);
+  const leaveRows = await client.query(
+    'SELECT student_id AS "studentId" FROM availability WHERE report_date = $1 AND type = $2',
+    [previousDate, 'LEAVE']
+  );
+  const leaveStudentIds = new Set(leaveRows.rows.map((row) => row.studentId));
+  const hasWholeDayLeave = previousStudentIds.length > 0 && previousStudentIds.every((studentId) => leaveStudentIds.has(studentId));
+  if (!hasWholeDayLeave) return null;
+  return (await client.query(
+    `SELECT id, name, roll_no AS "rollNo", dept
+       FROM students
+      WHERE id = ANY($1::uuid[]) AND status = 'Active'
+      ORDER BY rotation_order`,
+    [previousStudentIds]
+  )).rows;
+}
+
 async function generateSessionForDate(value, { theme = '' } = {}) {
   const settings = await getSettings();
   const date = sessionDateKey(value, settings.timezone);
@@ -134,7 +160,8 @@ async function generateSessionForDate(value, { theme = '' } = {}) {
     if (!Number.isInteger(capacity) || capacity < slots.length) {
       throw new Error(`Session capacity (${capacity}) must be at least the number of role slots (${slots.length})`);
     }
-    const roster = (await client.query(
+    const retainedCandidatePool = await getRetainedCandidatePool(client, date, settings.timezone);
+    const roster = retainedCandidatePool || (await client.query(
       "SELECT id, name, roll_no AS \"rollNo\", dept FROM students WHERE status = 'Active' ORDER BY rotation_order"
     )).rows;
     const unavailable = await client.query('SELECT student_id FROM availability WHERE report_date = $1', [date]);
