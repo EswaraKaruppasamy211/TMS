@@ -9,7 +9,7 @@ const reports = require('./services/reportService');
 
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const PORT = Number(process.env.PORT || 3000);
-const HOST = '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 
 function validateConfiguration() {
   const missing = ['DATABASE_URL', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'SESSION_SECRET']
