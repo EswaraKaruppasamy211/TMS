@@ -24,6 +24,8 @@ test('dashboard is gated behind configured admin login', async (context) => {
 
   const unauthorized = await fetch(`${base}/api/dashboard`);
   assert.equal(unauthorized.status, 401);
+  const unauthorizedReset = await fetch(`${base}/api/reset-schedules`, { method: 'POST' });
+  assert.equal(unauthorizedReset.status, 401);
   const dashboardRedirect = await fetch(`${base}/dashboard`, { redirect: 'manual' });
   assert.equal(dashboardRedirect.status, 302);
   assert.equal(dashboardRedirect.headers.get('location'), '/login');

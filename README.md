@@ -40,6 +40,7 @@ The database is not seeded. Add the real student roster in **Active roster** bef
 - OD and Leave are separate records per student and date. If a rostered student becomes unavailable, an eligible replacement is assigned; the original student, replacement, reason, and change audit remain recorded.
 - The optional manual override and extra assignment validate the active roster and date availability and add audit/history records. Manually assigned students are skipped for the immediately following report only.
 - Reports can be finalized, completed, and viewed from the historical archive. Completion is allowed only after finalization.
+- **Reset schedules from the beginning** clears saved schedules and their assignment history, OD/Leave availability, and college-leave dates, then resets rotation to the first roster position. It requires confirmation and preserves students and app settings.
 - Adding or deactivating students is available in the roster table. Inactive students are skipped without erasing their rotation history.
 
 ## Database and security notes

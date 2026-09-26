@@ -78,6 +78,10 @@ function createApp() {
   app.use('/api', requireAuth);
   app.get('/api/dashboard', asyncRoute(async (req, res) => res.json(await reports.getTomorrowDashboard())));
   app.get('/api/reports', asyncRoute(async (req, res) => res.json({ dates: await reports.listReportDates() })));
+  app.post('/api/reset-schedules', asyncRoute(async (req, res) => {
+    const deleted = await engine.resetScheduleData();
+    res.json({ ok: true, deleted });
+  }));
   app.get('/api/college-leaves', asyncRoute(async (req, res) => {
     res.json({ collegeLeaves: await engine.listCollegeLeaves() });
   }));

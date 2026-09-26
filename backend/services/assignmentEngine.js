@@ -44,6 +44,11 @@ function rotationExclusions(unavailableIds, recentManualAssignments) {
   return new Set([...unavailableIds, ...recentManualAssignments]);
 }
 
+async function lockScheduleData(client, exclusive = false) {
+  const lockFunction = exclusive ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
+  await client.query(`SELECT ${lockFunction}(hashtext($1)::bigint)`, ['tmsn:schedule-data']);
+}
+
 async function getSettings(client = null) {
   const result = await (client || { query }).query(
     "SELECT session_capacity AS \"sessionCapacity\", timezone, role_structure AS \"roleStructure\" FROM app_settings WHERE key = 'default'"
@@ -171,6 +176,7 @@ async function generateSessionForDate(value, {
   const settings = await getSettingsFn();
   const date = sessionDateKey(value, settings.timezone);
   return withTransactionFn(async (client) => {
+    await lockScheduleData(client);
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`tmsn:${date}`]);
     const collegeLeave = await collegeLeaveForDate(client, date);
     if (collegeLeave) return { alreadyExists: false, collegeLeave, session: null };
@@ -239,6 +245,21 @@ async function generateSessionForDate(value, {
   });
 }
 
+async function resetScheduleData(withTransactionFn = withTransaction) {
+  return withTransactionFn(async (client) => {
+    await lockScheduleData(client, true);
+    const availability = await client.query('DELETE FROM availability');
+    const collegeLeaves = await client.query('DELETE FROM college_leaves');
+    const sessions = await client.query('DELETE FROM sessions');
+    await client.query("UPDATE rotation_state SET next_index = 0 WHERE key = 'global'");
+    return {
+      availability: availability.rowCount,
+      collegeLeaves: collegeLeaves.rowCount,
+      sessions: sessions.rowCount,
+    };
+  });
+}
+
 async function markCollegeLeave(dateValue, reason = '', markedBy = 'admin') {
   if (typeof reason !== 'string' || reason.length > 300) {
     throw new Error('College Leave reason must be 300 characters or fewer');
@@ -247,6 +268,7 @@ async function markCollegeLeave(dateValue, reason = '', markedBy = 'admin') {
   const date = sessionDateKey(dateValue, settings.timezone);
   const today = dayjs().tz(settings.timezone).format('YYYY-MM-DD');
   return withTransaction(async (client) => {
+    await lockScheduleData(client);
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`tmsn:${date}`]);
     await client.query(
       `INSERT INTO college_leaves (report_date, reason, marked_by)
@@ -285,6 +307,7 @@ async function removeCollegeLeave(dateValue) {
   const date = sessionDateKey(dateValue, settings.timezone);
   const today = dayjs().tz(settings.timezone).format('YYYY-MM-DD');
   return withTransaction(async (client) => {
+    await lockScheduleData(client);
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`tmsn:${date}`]);
     const result = await client.query(
       'DELETE FROM college_leaves WHERE report_date=$1 RETURNING report_date AS date',
@@ -328,6 +351,7 @@ async function markUnavailable(studentId, dateValue, type, markedBy = '') {
   const settings = await getSettings();
   const date = sessionDateKey(dateValue, settings.timezone);
   return withTransaction(async (client) => {
+    await lockScheduleData(client);
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`tmsn:${date}`]);
     const student = await client.query('SELECT id FROM students WHERE id = $1 AND status = $2', [studentId, 'Active']);
     if (!student.rowCount) throw new Error('Student not found or inactive');
@@ -424,6 +448,7 @@ async function markUnavailable(studentId, dateValue, type, markedBy = '') {
 
 async function manualOverride(sessionId, role, newStudentId, changedBy = '', slotIndex = 0) {
   return withTransaction(async (client) => {
+    await lockScheduleData(client);
     const session = await client.query('SELECT * FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
     if (!session.rowCount) throw new Error('Session not found');
     await assertSessionIsScheduled(client, session.rows[0].report_date);
@@ -462,6 +487,7 @@ async function addExtraAssignment(sessionId, roleName, studentId, changedBy = ''
     throw new Error('Extra role name is required and must be 60 characters or fewer');
   }
   return withTransaction(async (client) => {
+    await lockScheduleData(client);
     const session = await client.query('SELECT * FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
     if (!session.rowCount) throw new Error('Session not found');
     await assertSessionIsScheduled(client, session.rows[0].report_date);
@@ -500,6 +526,7 @@ async function addExtraAssignment(sessionId, roleName, studentId, changedBy = ''
 
 async function updateSessionStatus(sessionId, status) {
   return withTransaction(async (client) => {
+    await lockScheduleData(client);
     const row = await client.query('SELECT status, report_date FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
     if (!row.rowCount) throw new Error('Session not found');
     await assertSessionIsScheduled(client, row.rows[0].report_date);
@@ -529,6 +556,7 @@ module.exports = {
   markCollegeLeave,
   removeCollegeLeave,
   listCollegeLeaves,
+  resetScheduleData,
   normalizeSessionDate,
   previousSessionDateKey,
   rotationExclusions,

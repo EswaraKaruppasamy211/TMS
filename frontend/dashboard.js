@@ -311,6 +311,24 @@ $('#history-select').addEventListener('change', async (event) => {
 });
 
 $('#show-tomorrow').addEventListener('click', loadDashboard);
+$('#reset-schedules').addEventListener('click', async (event) => {
+  const confirmed = window.confirm(
+    'Reset all schedules from the beginning?\n\nThis permanently deletes saved schedules and their history, individual availability, and college-leave dates. Students and app settings will be kept. The next schedule will start from the first student in the rotation.'
+  );
+  if (!confirmed) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await api('/api/reset-schedules', { method: 'POST' });
+    $('#history-select').value = '';
+    notify('Schedules and history cleared. The next schedule starts from the beginning of the roster.');
+    await Promise.all([loadDashboard(), loadCollegeLeaves()]);
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+});
 $('#finalize').addEventListener('click', async () => {
   try {
     const data = await api(`/api/reports/${state.report.sessionId}/finalize`, { method: 'POST' });

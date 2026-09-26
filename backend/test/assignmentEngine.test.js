@@ -9,6 +9,7 @@ const {
   normalizeSessionDate,
   previousSessionDateKey,
   rotationExclusions,
+  resetScheduleData,
   selectRotationPool,
 } = require('../services/assignmentEngine');
 const { ROLE_STRUCTURE, TIMEZONE } = require('../config/roles');
@@ -167,4 +168,25 @@ test('retains the previous leave-day pool as the next-day candidate pool', async
   const roster = Array.from({ length: 8 }, (_, index) => ({ id: previousStudentIds[index], name: `Student ${index + 1}` }));
   const result = selectRotationPool(roster, 0, 5, new Set(['a']));
   assert.deepEqual(result.pool.map((student) => student.id), ['b', 'c', 'd', 'e', 'f']);
+});
+
+test('resets schedules, history, availability, college leave, and rotation in one transaction', async () => {
+  const queries = [];
+  const deletedCounts = [4, 2, 7];
+  const result = await resetScheduleData(async (callback) => callback({
+    query: async (sql) => {
+      queries.push(sql);
+      if (sql.startsWith('DELETE')) return { rowCount: deletedCounts.shift() };
+      return { rowCount: 1 };
+    },
+  }));
+
+  assert.deepEqual(result, { availability: 4, collegeLeaves: 2, sessions: 7 });
+  assert.deepEqual(queries, [
+    'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+    'DELETE FROM availability',
+    'DELETE FROM college_leaves',
+    'DELETE FROM sessions',
+    "UPDATE rotation_state SET next_index = 0 WHERE key = 'global'",
+  ]);
 });
