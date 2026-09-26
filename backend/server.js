@@ -78,6 +78,21 @@ function createApp() {
   app.use('/api', requireAuth);
   app.get('/api/dashboard', asyncRoute(async (req, res) => res.json(await reports.getTomorrowDashboard())));
   app.get('/api/reports', asyncRoute(async (req, res) => res.json({ dates: await reports.listReportDates() })));
+  app.get('/api/college-leaves', asyncRoute(async (req, res) => {
+    res.json({ collegeLeaves: await engine.listCollegeLeaves() });
+  }));
+  app.post('/api/college-leaves', asyncRoute(async (req, res) => {
+    const { date, reason = '' } = req.body || {};
+    if (typeof date !== 'string' || !date || typeof reason !== 'string') {
+      return res.status(400).json({ error: 'A date and optional text reason are required.' });
+    }
+    const collegeLeave = await engine.markCollegeLeave(date, reason, 'admin');
+    res.json({ collegeLeave, dashboard: await reports.getTomorrowDashboard() });
+  }));
+  app.delete('/api/college-leaves/:date', asyncRoute(async (req, res) => {
+    const result = await engine.removeCollegeLeave(req.params.date);
+    res.json({ ...result, dashboard: await reports.getTomorrowDashboard() });
+  }));
   app.get('/api/reports/:date', asyncRoute(async (req, res) => {
     if (req.params.date === 'tomorrow') return res.json(await reports.getTomorrowDashboard());
     const report = await reports.getReportForDate(req.params.date);
@@ -120,6 +135,9 @@ function createApp() {
   }));
   app.post('/api/generate-tomorrow', asyncRoute(async (req, res) => {
     const result = await engine.generateSessionForDate(await engine.getTomorrowDate(), { theme: String(req.body?.theme || '').trim() });
+    if (result.collegeLeave) {
+      return res.json({ ...result, dashboard: await reports.getTomorrowDashboard() });
+    }
     res.json({ ...result, dashboard: await reports.getTomorrowDashboard() });
   }));
   app.post('/api/availability', asyncRoute(async (req, res) => {
@@ -162,7 +180,7 @@ function createApp() {
     if (res.headersSent) return next(error);
     const message = error.message || 'Request failed.';
     const status = error.code === '23505' ? 409
-      : (/Invalid session date|No eligible replacement|Cannot assign|Not enough eligible|capacity|Unsupported|not found|already|requires an available|Extra role name|Extra assignment/.test(message) ? 400 : 500);
+      : (/Invalid session date|No eligible replacement|Cannot assign|Not enough eligible|capacity|Unsupported|not found|already|requires an available|Extra role name|Extra assignment|College Leave|date and optional text reason/.test(message) ? 400 : 500);
     if (status === 500) console.error('Request failed:', error.code || error.name || 'unknown error');
     res.status(status).json({ error: status === 500
       ? 'Request failed. Check the server configuration and database.'

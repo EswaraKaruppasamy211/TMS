@@ -31,6 +31,15 @@ function previousSessionDateKey(value, timezoneName = TIMEZONE) {
     .format('YYYY-MM-DD');
 }
 
+function nextValidDateKey(value, leaveDates, timezoneName = TIMEZONE) {
+  const leaves = new Set(leaveDates);
+  let date = sessionDateKey(value, timezoneName);
+  while (leaves.has(date)) {
+    date = dayjs.tz(date, timezoneName).add(1, 'day').format('YYYY-MM-DD');
+  }
+  return date;
+}
+
 function rotationExclusions(unavailableIds, recentManualAssignments) {
   return new Set([...unavailableIds, ...recentManualAssignments]);
 }
@@ -84,11 +93,13 @@ function selectRotationPool(roster, startIndex, capacity, unavailableIds) {
 
 async function scoreMap(studentIds, roles, date, client) {
   const result = await client.query(
-    `SELECT student_id, role, count(*)::int AS total, max(report_date) AS last_date
-       FROM role_history
-      WHERE student_id = ANY($1::uuid[]) AND role = ANY($2::text[])
-        AND report_date < $3::date AND active
-      GROUP BY student_id, role`,
+    `SELECT h.student_id, h.role, count(*)::int AS total, max(h.report_date) AS last_date
+       FROM role_history h
+       JOIN sessions s ON s.id = h.session_id
+      WHERE h.student_id = ANY($1::uuid[]) AND h.role = ANY($2::text[])
+        AND h.report_date < $3::date AND h.active
+        AND NOT s.cancelled_by_college_leave
+      GROUP BY h.student_id, h.role`,
     [studentIds, roles, date]
   );
   const scores = new Map();
@@ -113,6 +124,7 @@ async function assignRolesToPool(pool, slots, date, client) {
 
 async function getRetainedCandidatePool(client, date, timezoneName = TIMEZONE) {
   const previousDate = previousSessionDateKey(date, timezoneName);
+  if (await collegeLeaveForDate(client, previousDate)) return null;
   const previousSession = await client.query('SELECT id FROM sessions WHERE report_date = $1', [previousDate]);
   if (!previousSession.rowCount) return null;
   const previousAssignments = await client.query(
@@ -137,11 +149,31 @@ async function getRetainedCandidatePool(client, date, timezoneName = TIMEZONE) {
   )).rows;
 }
 
-async function generateSessionForDate(value, { theme = '' } = {}) {
-  const settings = await getSettings();
+async function collegeLeaveForDate(client, date) {
+  const result = await client.query(
+    'SELECT report_date AS date, reason FROM college_leaves WHERE report_date = $1',
+    [date]
+  );
+  return result.rows[0] || null;
+}
+
+async function assertSessionIsScheduled(client, date) {
+  if (await collegeLeaveForDate(client, date)) {
+    throw new Error('This date is marked as College Leave and has no schedule');
+  }
+}
+
+async function generateSessionForDate(value, {
+  theme = '',
+  getSettingsFn = getSettings,
+  withTransactionFn = withTransaction,
+} = {}) {
+  const settings = await getSettingsFn();
   const date = sessionDateKey(value, settings.timezone);
-  return withTransaction(async (client) => {
+  return withTransactionFn(async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`tmsn:${date}`]);
+    const collegeLeave = await collegeLeaveForDate(client, date);
+    if (collegeLeave) return { alreadyExists: false, collegeLeave, session: null };
     const existing = await client.query('SELECT * FROM sessions WHERE report_date = $1', [date]);
     if (existing.rowCount) {
       const existingSession = existing.rows[0];
@@ -169,7 +201,8 @@ async function generateSessionForDate(value, { theme = '' } = {}) {
     const recentManualAssignments = await client.query(
       `SELECT a.student_id
          FROM assignments a JOIN sessions s ON s.id = a.session_id
-        WHERE s.report_date = $1 AND a.manual_override = true`,
+        WHERE s.report_date = $1 AND a.manual_override = true
+          AND NOT s.cancelled_by_college_leave`,
       [previousDate]
     );
     const unavailableIds = rotationExclusions(
@@ -206,6 +239,90 @@ async function generateSessionForDate(value, { theme = '' } = {}) {
   });
 }
 
+async function markCollegeLeave(dateValue, reason = '', markedBy = 'admin') {
+  if (typeof reason !== 'string' || reason.length > 300) {
+    throw new Error('College Leave reason must be 300 characters or fewer');
+  }
+  const settings = await getSettings();
+  const date = sessionDateKey(dateValue, settings.timezone);
+  const today = dayjs().tz(settings.timezone).format('YYYY-MM-DD');
+  return withTransaction(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`tmsn:${date}`]);
+    await client.query(
+      `INSERT INTO college_leaves (report_date, reason, marked_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (report_date) DO UPDATE
+       SET reason=EXCLUDED.reason, marked_by=EXCLUDED.marked_by`,
+      [date, reason.trim(), markedBy]
+    );
+    const sessionResult = await client.query(
+      'SELECT * FROM sessions WHERE report_date = $1 FOR UPDATE',
+      [date]
+    );
+    if (!sessionResult.rowCount) return { date, reason: reason.trim(), scheduleRetained: false };
+
+    const laterSessions = await client.query(
+      'SELECT 1 FROM sessions WHERE report_date > $1 AND NOT cancelled_by_college_leave LIMIT 1',
+      [date]
+    );
+    await client.query(
+      'UPDATE sessions SET cancelled_by_college_leave=true, updated_at=now() WHERE report_date=$1',
+      [date]
+    );
+    if (date >= today && !laterSessions.rowCount) {
+      const session = sessionResult.rows[0];
+      await client.query(
+        "UPDATE rotation_state SET next_index=$1 WHERE key='global'",
+        [session.rotation_start_index]
+      );
+    }
+    return { date, reason: reason.trim(), scheduleRetained: true };
+  });
+}
+
+async function removeCollegeLeave(dateValue) {
+  const settings = await getSettings();
+  const date = sessionDateKey(dateValue, settings.timezone);
+  const today = dayjs().tz(settings.timezone).format('YYYY-MM-DD');
+  return withTransaction(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`tmsn:${date}`]);
+    const result = await client.query(
+      'DELETE FROM college_leaves WHERE report_date=$1 RETURNING report_date AS date',
+      [date]
+    );
+    if (result.rowCount) {
+      const sessionResult = await client.query(
+        'SELECT * FROM sessions WHERE report_date=$1 FOR UPDATE',
+        [date]
+      );
+      if (sessionResult.rowCount) {
+        const session = sessionResult.rows[0];
+        const laterSessions = await client.query(
+          'SELECT 1 FROM sessions WHERE report_date > $1 AND NOT cancelled_by_college_leave LIMIT 1',
+          [date]
+        );
+        await client.query(
+          'UPDATE sessions SET cancelled_by_college_leave=false, updated_at=now() WHERE id=$1',
+          [session.id]
+        );
+        if (date >= today && !laterSessions.rowCount) {
+          await client.query(
+            "UPDATE rotation_state SET next_index=$1 WHERE key='global'",
+            [session.rotation_end_index]
+          );
+        }
+      }
+    }
+    return { removed: Boolean(result.rowCount), date };
+  });
+}
+
+async function listCollegeLeaves() {
+  return (await query(
+    "SELECT to_char(report_date, 'YYYY-MM-DD') AS date, reason FROM college_leaves ORDER BY report_date"
+  )).rows;
+}
+
 async function markUnavailable(studentId, dateValue, type, markedBy = '') {
   if (!['OD', 'LEAVE'].includes(type)) throw new Error(`Unsupported unavailable status: ${type}`);
   const settings = await getSettings();
@@ -221,6 +338,9 @@ async function markUnavailable(studentId, dateValue, type, markedBy = '') {
        SET type = EXCLUDED.type, marked_by = EXCLUDED.marked_by`,
       [studentId, date, type, markedBy]
     );
+    if (await collegeLeaveForDate(client, date)) {
+      return { recalculated: false, reason: 'College Leave; there is no schedule for this date' };
+    }
     const sessionResult = await client.query('SELECT * FROM sessions WHERE report_date = $1 FOR UPDATE', [date]);
     if (!sessionResult.rowCount) return { recalculated: false, reason: 'No session generated yet for this date' };
     const session = sessionResult.rows[0];
@@ -306,6 +426,7 @@ async function manualOverride(sessionId, role, newStudentId, changedBy = '', slo
   return withTransaction(async (client) => {
     const session = await client.query('SELECT * FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
     if (!session.rowCount) throw new Error('Session not found');
+    await assertSessionIsScheduled(client, session.rows[0].report_date);
     const assignmentResult = await client.query(
       'SELECT * FROM assignments WHERE session_id=$1 AND role=$2 ORDER BY slot_index LIMIT 1 OFFSET $3 FOR UPDATE',
       [sessionId, role, slotIndex]
@@ -343,6 +464,7 @@ async function addExtraAssignment(sessionId, roleName, studentId, changedBy = ''
   return withTransaction(async (client) => {
     const session = await client.query('SELECT * FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
     if (!session.rowCount) throw new Error('Session not found');
+    await assertSessionIsScheduled(client, session.rows[0].report_date);
     const reportDate = session.rows[0].report_date;
     const student = await client.query(
       `SELECT id FROM students WHERE id=$1 AND status='Active'
@@ -378,8 +500,9 @@ async function addExtraAssignment(sessionId, roleName, studentId, changedBy = ''
 
 async function updateSessionStatus(sessionId, status) {
   return withTransaction(async (client) => {
-    const row = await client.query('SELECT status FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
+    const row = await client.query('SELECT status, report_date FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
     if (!row.rowCount) throw new Error('Session not found');
+    await assertSessionIsScheduled(client, row.rows[0].report_date);
     const allowed = { Finalized: ['Generated', 'Modified'], Completed: ['Finalized'] };
     if (!allowed[status]?.includes(row.rows[0].status)) {
       throw new Error(`Cannot change session status from ${row.rows[0].status} to ${status}`);
@@ -402,6 +525,10 @@ module.exports = {
   assignRolesToPool,
   expandRoleSlots,
   getRoleStructureForDate,
+  nextValidDateKey,
+  markCollegeLeave,
+  removeCollegeLeave,
+  listCollegeLeaves,
   normalizeSessionDate,
   previousSessionDateKey,
   rotationExclusions,

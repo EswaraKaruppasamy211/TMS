@@ -53,6 +53,7 @@ async function loadDashboard() {
   try {
     const data = await api('/api/dashboard');
     renderReport(data.report, data.heading);
+    renderCollegeLeaveNotice(data.collegeLeaves || []);
     await loadArchive();
   } catch (error) {
     setReportLoading(error.message.includes('eligible students')
@@ -60,6 +61,23 @@ async function loadDashboard() {
       : error.message);
     notify(error.message, true);
   }
+}
+
+function renderCollegeLeaveNotice(collegeLeaves) {
+  const notice = $('#college-leave-notice');
+  notice.replaceChildren();
+  notice.classList.toggle('hidden', collegeLeaves.length === 0);
+  $('#roster-heading').textContent = collegeLeaves.length ? 'Next valid roster' : "Tomorrow's roster";
+  $('#tomorrow-label').textContent = collegeLeaves.length
+    ? `College Leave · ${collegeLeaves[0].date}`
+    : state.report?.date || 'Loading…';
+  if (!collegeLeaves.length) return;
+  notice.append(node('h2', 'College Leave'));
+  for (const leave of collegeLeaves) {
+    const description = leave.reason ? `${leave.date} · ${leave.reason}` : leave.date;
+    notice.append(node('p', description));
+  }
+  notice.append(node('p', `No roster is shown for the college-leave date${collegeLeaves.length > 1 ? 's' : ''}. The next valid schedule is displayed below.`));
 }
 
 function renderReport(report, heading) {
@@ -173,6 +191,34 @@ async function loadStudents() {
   }
 }
 
+async function loadCollegeLeaves() {
+  const { collegeLeaves } = await api('/api/college-leaves');
+  const list = $('#college-leave-list');
+  list.replaceChildren();
+  if (!collegeLeaves.length) {
+    list.append(node('li', 'No college-leave dates marked.', 'muted'));
+    return;
+  }
+  for (const leave of collegeLeaves) {
+    const item = node('li');
+    const description = node('span', leave.reason ? `${leave.date} · ${leave.reason}` : leave.date);
+    const remove = node('button', 'Remove / Cancel', 'mini-button');
+    remove.type = 'button';
+    remove.addEventListener('click', async () => {
+      try {
+        const result = await api(`/api/college-leaves/${leave.date}`, { method: 'DELETE' });
+        renderReport(result.dashboard.report, result.dashboard.heading);
+        renderCollegeLeaveNotice(result.dashboard.collegeLeaves || []);
+        await loadCollegeLeaves();
+        await loadArchive();
+        notify('College Leave removed.');
+      } catch (error) { notify(error.message, true); }
+    });
+    item.append(description, remove);
+    list.append(item);
+  }
+}
+
 function setupOverride() {
   const roles = [...new Set((state.report?.assignments || []).map((assignment) => assignment.role))];
   const roleSelect = $('#override-role');
@@ -199,13 +245,34 @@ $('#generate').addEventListener('click', async () => {
   try {
     const data = await api('/api/generate-tomorrow', { method: 'POST', body: JSON.stringify({ theme }) });
     renderReport(data.dashboard.report, data.dashboard.heading);
+    renderCollegeLeaveNotice(data.dashboard.collegeLeaves || []);
     setupOverride();
     await loadArchive();
-    notify(data.alreadyExists ? 'Tomorrow’s report is up to date.' : 'Tomorrow’s report has been generated.');
+    notify(data.collegeLeave
+      ? 'Tomorrow is College Leave; no schedule was generated for that date.'
+      : data.alreadyExists ? 'Tomorrow’s report is up to date.' : 'Tomorrow’s report has been generated.');
   } catch (error) { notify(error.message, true); }
 });
 
 $('#availability-date').value = tomorrowISO();
+$('#college-leave-date').value = tomorrowISO();
+$('#college-leave-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const result = await api('/api/college-leaves', { method: 'POST', body: JSON.stringify({
+      date: $('#college-leave-date').value,
+      reason: $('#college-leave-reason').value,
+    }) });
+    renderReport(result.dashboard.report, result.dashboard.heading);
+    renderCollegeLeaveNotice(result.dashboard.collegeLeaves || []);
+    await loadCollegeLeaves();
+    await loadArchive();
+    event.currentTarget.reset();
+    $('#college-leave-date').value = tomorrowISO();
+    notify('College Leave marked.');
+  } catch (error) { notify(error.message, true); }
+});
+
 $('#availability-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
@@ -295,3 +362,4 @@ $('#copy-report').addEventListener('click', async () => {
 Promise.all([loadStudents(), loadDashboard()])
   .then(setupOverride)
   .catch((error) => notify(error.message, true));
+loadCollegeLeaves().catch((error) => notify(error.message, true));

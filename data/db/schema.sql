@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   report_date date NOT NULL UNIQUE,
   theme text NOT NULL DEFAULT '',
+  cancelled_by_college_leave boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'Generated'
     CHECK (status IN ('Draft', 'Generated', 'Modified', 'Finalized', 'Completed')),
   rotation_start_index integer NOT NULL DEFAULT 0,
@@ -35,6 +36,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE sessions
+  ADD COLUMN IF NOT EXISTS cancelled_by_college_leave boolean NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS availability (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -44,6 +47,13 @@ CREATE TABLE IF NOT EXISTS availability (
   marked_by text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (student_id, report_date)
+);
+
+CREATE TABLE IF NOT EXISTS college_leaves (
+  report_date date PRIMARY KEY,
+  reason text NOT NULL DEFAULT '',
+  marked_by text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS assignments (

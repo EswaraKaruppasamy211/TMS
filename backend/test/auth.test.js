@@ -47,5 +47,8 @@ test('dashboard is gated behind configured admin login', async (context) => {
     redirect: 'manual',
   });
   assert.equal(authorized.status, 200);
-  assert.match(await authorized.text(), /Tomorrow's roster/);
+  const dashboard = await authorized.text();
+  assert.match(dashboard, /Tomorrow's roster/);
+  assert.match(dashboard, /College Leave/);
+  assert.match(dashboard, /OD or Leave/);
 });

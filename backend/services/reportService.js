@@ -1,5 +1,10 @@
 const { query } = require('../../data/db');
-const { getTomorrowDate, generateSessionForDate, sessionDateKey } = require('./assignmentEngine');
+const {
+  getTomorrowDate,
+  generateSessionForDate,
+  sessionDateKey,
+  nextValidDateKey,
+} = require('./assignmentEngine');
 const { buildSessionReport } = require('./reportBuilder');
 
 async function loadSessionReport(date) {
@@ -63,25 +68,54 @@ async function loadSessionReport(date) {
 }
 
 async function getTomorrowReport() {
-  const date = await getTomorrowDate();
-  await generateSessionForDate(date);
   const settings = await query("SELECT timezone FROM app_settings WHERE key='default'");
-  return loadSessionReport(sessionDateKey(date, settings.rows[0]?.timezone || 'Asia/Kolkata'));
+  const timezone = settings.rows[0]?.timezone || 'Asia/Kolkata';
+  const tomorrow = sessionDateKey(await getTomorrowDate(), timezone);
+  while (true) {
+    const leaveResult = await query(
+      'SELECT report_date AS date, reason FROM college_leaves WHERE report_date >= $1 ORDER BY report_date',
+      [tomorrow]
+    );
+    const leaveDates = leaveResult.rows.map((row) => sessionDateKey(row.date, timezone));
+    const date = nextValidDateKey(tomorrow, leaveDates, timezone);
+    const skippedCollegeLeaves = leaveResult.rows.filter((row) =>
+      sessionDateKey(row.date, timezone) < date
+    );
+    const generated = await generateSessionForDate(date);
+    if (generated.collegeLeave) continue;
+    return {
+      report: await loadSessionReport(date),
+      skippedCollegeLeaves: skippedCollegeLeaves.map((row) => ({
+        date: sessionDateKey(row.date, timezone),
+        reason: row.reason,
+      })),
+    };
+  }
 }
 
 async function getReportForDate(value) {
   const settings = await query("SELECT timezone FROM app_settings WHERE key='default'");
   const date = sessionDateKey(value, settings.rows[0]?.timezone || 'Asia/Kolkata');
+  const collegeLeave = await query('SELECT 1 FROM college_leaves WHERE report_date=$1', [date]);
+  if (collegeLeave.rowCount) return null;
   return loadSessionReport(date);
 }
 
 async function getTomorrowDashboard() {
-  const report = await getTomorrowReport();
-  return { heading: "TOMORROW'S TMSN", report };
+  const { report, skippedCollegeLeaves } = await getTomorrowReport();
+  return {
+    heading: skippedCollegeLeaves.length ? 'NEXT VALID SCHEDULE' : "TOMORROW'S TMSN",
+    report,
+    collegeLeaves: skippedCollegeLeaves,
+  };
 }
 
 async function listReportDates() {
-  return (await query('SELECT report_date AS date FROM sessions ORDER BY report_date DESC')).rows;
+  return (await query(
+    `SELECT s.report_date AS date FROM sessions s
+      WHERE NOT EXISTS (SELECT 1 FROM college_leaves c WHERE c.report_date=s.report_date)
+      ORDER BY s.report_date DESC`
+  )).rows;
 }
 
 module.exports = { getTomorrowDashboard, getTomorrowReport, getReportForDate, listReportDates };

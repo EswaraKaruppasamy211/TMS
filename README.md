@@ -34,6 +34,7 @@ The database is not seeded. Add the real student roster in **Active roster** bef
 ## Dashboard
 
 - The authenticated dashboard generates (idempotently) and shows only the next calendar day's report in `Asia/Kolkata`.
+- College Leave is managed separately from individual OD/Leave, is persisted in PostgreSQL, and skips the marked date without generating a schedule or advancing rotation. The dashboard identifies skipped college-leave dates and displays the next valid schedule.
 - Monday–Thursday use the 15-role routine: 3 Prepared Speakers, 3 Specific Evaluators, 3 Table Topic Speakers, and Timer, AH Counter, Grammarian, TMOD, GE, and TTM. Friday/Saturday use Group A (5), Group B (5), Timer, Counter, and Grammarian.
 - Rotation follows the active roster order, wraps around, skips date-specific OD/Leave, and scores roles against prior active role history.
 - OD and Leave are separate records per student and date. If a rostered student becomes unavailable, an eligible replacement is assigned; the original student, replacement, reason, and change audit remain recorded.

@@ -13,10 +13,11 @@
   </header>
   <main class="shell">
     <section class="intro">
-      <div><p class="eyebrow">THE MEETING, IN GOOD ORDER</p><h1>Tomorrow's roster</h1><p class="muted">A fair rotation. Every role covered. One clear plan.</p></div>
+      <div><p class="eyebrow">THE MEETING, IN GOOD ORDER</p><h1 id="roster-heading">Tomorrow's roster</h1><p class="muted">A fair rotation. Every role covered. One clear plan.</p></div>
       <div class="tomorrow-pill"><span>UP NEXT</span><strong id="tomorrow-label">Loading…</strong></div>
     </section>
     <div id="notice" class="notice" role="status"></div>
+    <section id="college-leave-notice" class="card college-leave-notice hidden" role="status"></section>
     <section class="card report-card">
       <div class="section-head">
         <div><p class="eyebrow" id="report-kicker">DAILY REPORT</p><h2 id="report-date">Loading report…</h2><p class="muted" id="report-theme"></p></div>
@@ -32,7 +33,7 @@
         <button class="button secondary full-width space-top" id="show-tomorrow">Back to tomorrow</button>
       </section>
       <section class="card">
-        <div class="section-head compact"><div><p class="eyebrow">ONE-TIME AVAILABILITY</p><h2>OD or Leave</h2></div></div>
+        <div class="section-head compact"><div><p class="eyebrow">INDIVIDUAL STUDENT AVAILABILITY</p><h2>OD or Leave</h2></div></div>
         <p class="muted small-copy">Marking someone unavailable automatically finds a replacement and logs the change.</p>
         <form id="availability-form" class="stack-form">
           <label>Student<select id="availability-student" required></select></label>
@@ -41,6 +42,19 @@
         </form>
       </section>
     </div>
+    <section class="card college-leave-card">
+      <div class="section-head compact"><div><p class="eyebrow">ENTIRE COLLEGE</p><h2>College Leave</h2></div></div>
+      <p class="muted small-copy">Marks a college-wide holiday. No schedule or rotation is created for that date; this is separate from individual OD or Leave.</p>
+      <form id="college-leave-form" class="form-row college-leave-form">
+        <label>College Leave Date<input id="college-leave-date" type="date" required></label>
+        <label>Reason (optional)<input id="college-leave-reason" maxlength="300"></label>
+        <button class="button secondary">Mark College Leave</button>
+      </form>
+      <div class="college-leave-list">
+        <h3>Marked college-leave dates</h3>
+        <ul id="college-leave-list"><li class="muted">Loading…</li></ul>
+      </div>
+    </section>
     <section class="card">
       <div class="section-head compact"><div><p class="eyebrow">FAIR ROTATION</p><h2>Active roster</h2></div><span id="roster-count" class="muted"></span></div>
       <div class="roster-layout">

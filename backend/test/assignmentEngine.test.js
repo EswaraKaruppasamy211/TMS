@@ -3,7 +3,9 @@ const test = require('node:test');
 const {
   assignRolesToPool,
   expandRoleSlots,
+  generateSessionForDate,
   getRoleStructureForDate,
+  nextValidDateKey,
   normalizeSessionDate,
   previousSessionDateKey,
   rotationExclusions,
@@ -74,6 +76,62 @@ test('keeps the configured routine Monday through Thursday and uses the special 
 test('uses the immediately preceding local date for next-day manual assignment skips', () => {
   assert.equal(previousSessionDateKey('2026-09-25', TIMEZONE), '2026-09-24');
   assert.equal(previousSessionDateKey('2026-09-26', TIMEZONE), '2026-09-25');
+});
+
+test('skips one or multiple college-leave dates without changing weekday role formats', () => {
+  assert.equal(nextValidDateKey('2026-09-24', ['2026-09-24'], TIMEZONE), '2026-09-25');
+  assert.equal(
+    nextValidDateKey('2026-09-24', ['2026-09-24', '2026-09-25', '2026-09-27'], TIMEZONE),
+    '2026-09-26'
+  );
+  assert.equal(
+    nextValidDateKey('2026-09-24', ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'], TIMEZONE),
+    '2026-09-28'
+  );
+  assert.equal(expandRoleSlots(getRoleStructureForDate('2026-09-25', TIMEZONE)).length, 13);
+  assert.equal(expandRoleSlots(getRoleStructureForDate('2026-09-26', TIMEZONE)).length, 13);
+  assert.equal(expandRoleSlots(getRoleStructureForDate('2026-09-28', TIMEZONE)).length, 15);
+});
+
+test('Wednesday-to-Monday college-leave flow skips Thursday generation and keeps Friday/Saturday formats', async () => {
+  const rotationUpdates = [];
+  const queries = [];
+  const result = await generateSessionForDate('2026-09-24', {
+    getSettingsFn: async () => ({ timezone: TIMEZONE, sessionCapacity: 15, roleStructure: ROLE_STRUCTURE }),
+    withTransactionFn: async (callback) => callback({
+      query: async (sql, params) => {
+        queries.push(sql);
+        if (sql.includes('college_leaves')) {
+          assert.deepEqual(params, ['2026-09-24']);
+          return { rowCount: 1, rows: [{ date: '2026-09-24', reason: 'College holiday' }] };
+        }
+        if (sql.includes('UPDATE rotation_state')) rotationUpdates.push(params[0]);
+        return { rowCount: 0, rows: [] };
+      },
+    }),
+  });
+
+  assert.equal(result.session, null);
+  assert.equal(result.collegeLeave.reason, 'College holiday');
+  assert.equal(queries.filter((sql) => sql.includes('INSERT INTO sessions')).length, 0);
+  assert.deepEqual(rotationUpdates, []);
+
+  const scenario = [
+    ['2026-09-23', ROLE_STRUCTURE, false],
+    ['2026-09-24', null, true],
+    ['2026-09-25', weekendRoles, false],
+    ['2026-09-26', weekendRoles, false],
+    ['2026-09-28', ROLE_STRUCTURE, false],
+  ];
+  for (const [date, expectedStructure, isCollegeLeave] of scenario) {
+    const actualDate = nextValidDateKey(date, isCollegeLeave ? [date] : [], TIMEZONE);
+    if (isCollegeLeave) {
+      assert.notEqual(actualDate, date);
+      continue;
+    }
+    assert.equal(actualDate, date);
+    assert.deepEqual(getRoleStructureForDate(actualDate, TIMEZONE), expectedStructure);
+  }
 });
 
 test('excludes unavailable and manually selected students for one rotation, not permanently', () => {
