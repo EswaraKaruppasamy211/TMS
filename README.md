@@ -29,15 +29,15 @@ A private, localhost-only meeting roster dashboard backed by PostgreSQL. Supabas
 
 6. Open **http://127.0.0.1:3000** and sign in with the values you configured in `.env`.
 
-The database is not seeded. Add the real student roster in **Active roster** before generating a report; at least 15 active students are required for the default 15 role slots. Students are appended in rotation order. No demo students or credentials are created.
+The database is not seeded. Add the real student roster in **Active roster** before generating a report; weekday reports require 15 eligible students, while Friday/Saturday reports require 13. Students are appended in rotation order. No demo students or credentials are created.
 
 ## Dashboard
 
 - The authenticated dashboard generates (idempotently) and shows only the next calendar day's report in `Asia/Kolkata`.
-- The default session has 15 seats: 3 Prepared Speakers, 3 Specific Evaluators, 3 Table Topic Speakers, and Timer, AH Counter, Grammarian, TMOD, GE, and TTM.
+- Monday–Thursday use the 15-role routine: 3 Prepared Speakers, 3 Specific Evaluators, 3 Table Topic Speakers, and Timer, AH Counter, Grammarian, TMOD, GE, and TTM. Friday/Saturday use Group A (5), Group B (5), Timer, Counter, and Grammarian.
 - Rotation follows the active roster order, wraps around, skips date-specific OD/Leave, and scores roles against prior active role history.
 - OD and Leave are separate records per student and date. If a rostered student becomes unavailable, an eligible replacement is assigned; the original student, replacement, reason, and change audit remain recorded.
-- The optional manual override validates the active roster and date availability and adds an audit event.
+- The optional manual override and extra assignment validate the active roster and date availability and add audit/history records. Manually assigned students are skipped for the immediately following report only.
 - Reports can be finalized, completed, and viewed from the historical archive. Completion is allowed only after finalization.
 - Adding or deactivating students is available in the roster table. Inactive students are skipped without erasing their rotation history.
 

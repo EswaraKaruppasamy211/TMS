@@ -64,6 +64,7 @@ async function loadDashboard() {
 
 function renderReport(report, heading) {
   state.report = report;
+  $('#extra-assignment-form').hidden = state.historical;
   $('#report-kicker').textContent = heading || 'DAILY REPORT';
   $('#report-date').textContent = report.date;
   $('#report-theme').textContent = report.theme ? `Theme · ${report.theme}` : 'Theme not set';
@@ -158,13 +159,17 @@ async function loadStudents() {
   const active = students.filter((student) => student.status === 'Active');
   const availability = $('#availability-student');
   const override = $('#override-student');
+  const extra = $('#extra-student');
   availability.replaceChildren();
   override.replaceChildren();
+  extra.replaceChildren();
   availability.add(new Option('Choose a student…', ''));
   override.add(new Option('Choose a student…', ''));
+  extra.add(new Option('Choose a student…', ''));
   for (const student of active) {
     availability.add(new Option(`${student.name} · ${student.rollNo}`, student.id));
     override.add(new Option(`${student.name} · ${student.rollNo}`, student.id));
+    extra.add(new Option(`${student.name} · ${student.rollNo}`, student.id));
   }
 }
 
@@ -265,6 +270,20 @@ $('#override-form').addEventListener('submit', async (event) => {
     renderReport(result.dashboard.report, result.dashboard.heading);
     setupOverride();
     notify('Role override applied and recorded.');
+  } catch (error) { notify(error.message, true); }
+});
+$('#extra-assignment-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const result = await api('/api/extra-assignment', { method: 'POST', body: JSON.stringify({
+      sessionId: state.report.sessionId,
+      role: $('#extra-role').value,
+      studentId: $('#extra-student').value,
+    }) });
+    renderReport(result.dashboard.report, result.dashboard.heading);
+    setupOverride();
+    event.currentTarget.reset();
+    notify('Extra assignment added and recorded for tomorrow’s rotation.');
   } catch (error) { notify(error.message, true); }
 });
 $('#copy-report').addEventListener('click', async () => {

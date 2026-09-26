@@ -7,8 +7,32 @@ const { ROLE_STRUCTURE, TIMEZONE } = require('../config/roles');
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+const WEEKEND_ROLE_STRUCTURE = [
+  { role: 'Group A', count: 5 },
+  { role: 'Group B', count: 5 },
+  { role: 'Timer', count: 1 },
+  { role: 'Counter', count: 1 },
+  { role: 'Grammarian', count: 1 },
+];
+
 function expandRoleSlots(roleStructure) {
   return roleStructure.flatMap(({ role, count }) => Array.from({ length: count }, () => role));
+}
+
+function getRoleStructureForDate(value, timezoneName = TIMEZONE, weekdayRoleStructure = ROLE_STRUCTURE) {
+  const date = sessionDateKey(value, timezoneName);
+  const weekday = dayjs.tz(date, timezoneName).day();
+  return weekday === 5 || weekday === 6 ? WEEKEND_ROLE_STRUCTURE : weekdayRoleStructure;
+}
+
+function previousSessionDateKey(value, timezoneName = TIMEZONE) {
+  return dayjs.tz(sessionDateKey(value, timezoneName), timezoneName)
+    .subtract(1, 'day')
+    .format('YYYY-MM-DD');
+}
+
+function rotationExclusions(unavailableIds, recentManualAssignments) {
+  return new Set([...unavailableIds, ...recentManualAssignments]);
 }
 
 async function getSettings(client = null) {
@@ -105,7 +129,7 @@ async function generateSessionForDate(value, { theme = '' } = {}) {
       return { alreadyExists: true, session: existingSession };
     }
 
-    const slots = expandRoleSlots(settings.roleStructure);
+    const slots = expandRoleSlots(getRoleStructureForDate(date, settings.timezone, settings.roleStructure));
     const capacity = settings.sessionCapacity || slots.length;
     if (!Number.isInteger(capacity) || capacity < slots.length) {
       throw new Error(`Session capacity (${capacity}) must be at least the number of role slots (${slots.length})`);
@@ -114,7 +138,17 @@ async function generateSessionForDate(value, { theme = '' } = {}) {
       "SELECT id, name, roll_no AS \"rollNo\", dept FROM students WHERE status = 'Active' ORDER BY rotation_order"
     )).rows;
     const unavailable = await client.query('SELECT student_id FROM availability WHERE report_date = $1', [date]);
-    const unavailableIds = new Set(unavailable.rows.map((row) => row.student_id));
+    const previousDate = previousSessionDateKey(date, settings.timezone);
+    const recentManualAssignments = await client.query(
+      `SELECT a.student_id
+         FROM assignments a JOIN sessions s ON s.id = a.session_id
+        WHERE s.report_date = $1 AND a.manual_override = true`,
+      [previousDate]
+    );
+    const unavailableIds = rotationExclusions(
+      unavailable.rows.map((row) => row.student_id),
+      recentManualAssignments.rows.map((row) => row.student_id)
+    );
     const rotation = (await client.query("SELECT next_index FROM rotation_state WHERE key = 'global' FOR UPDATE")).rows[0];
     const startIndex = rotation?.next_index || 0;
     const { pool, nextIndex } = selectRotationPool(roster, startIndex, capacity, unavailableIds);
@@ -213,7 +247,7 @@ async function markUnavailable(studentId, dateValue, type, markedBy = '') {
       ? assignment.replaced_student_id : assignment.student_id;
     const reason = assignment.is_replacement && assignment.replacement_reason
       ? assignment.replacement_reason : type;
-    await client.query('UPDATE assignments SET student_id=$1, is_replacement=true, replaced_student_id=$2, replacement_reason=$3 WHERE id=$4',
+    await client.query('UPDATE assignments SET student_id=$1, is_replacement=true, replaced_student_id=$2, replacement_reason=$3, manual_override=false WHERE id=$4',
       [replacement.id, originalId, reason, assignment.id]);
     await client.query(
       `INSERT INTO session_exceptions (session_id, student_id, original_role, replacement_id, reason, changed_by)
@@ -274,6 +308,47 @@ async function manualOverride(sessionId, role, newStudentId, changedBy = '', slo
   });
 }
 
+async function addExtraAssignment(sessionId, roleName, studentId, changedBy = '') {
+  const normalizedRole = typeof roleName === 'string' ? roleName.trim() : '';
+  if (!normalizedRole || normalizedRole.length > 60) {
+    throw new Error('Extra role name is required and must be 60 characters or fewer');
+  }
+  return withTransaction(async (client) => {
+    const session = await client.query('SELECT * FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
+    if (!session.rowCount) throw new Error('Session not found');
+    const reportDate = session.rows[0].report_date;
+    const student = await client.query(
+      `SELECT id FROM students WHERE id=$1 AND status='Active'
+       AND NOT EXISTS (SELECT 1 FROM availability WHERE student_id=$1 AND report_date=$2)
+       AND NOT EXISTS (SELECT 1 FROM assignments WHERE session_id=$3 AND student_id=$1)`,
+      [studentId, reportDate, sessionId]
+    );
+    if (!student.rowCount) throw new Error('Extra assignment requires an available active student not assigned elsewhere');
+    const role = `Extra: ${normalizedRole}`;
+    const slotIndex = (await client.query(
+      'SELECT COALESCE(max(slot_index), -1) + 1 AS value FROM assignments WHERE session_id=$1',
+      [sessionId]
+    )).rows[0].value;
+    await client.query(
+      `INSERT INTO assignments (session_id, slot_index, role, student_id, manual_override)
+       VALUES ($1, $2, $3, $4, true)`,
+      [sessionId, slotIndex, role, studentId]
+    );
+    await client.query(
+      'INSERT INTO role_history (student_id, role, report_date, session_id) VALUES ($1,$2,$3,$4)',
+      [studentId, role, reportDate, sessionId]
+    );
+    await client.query(
+      `INSERT INTO session_audit
+        (session_id, role, slot_index, to_student_id, reason, changed_by)
+       VALUES ($1,$2,$3,$4,'MANUAL_OVERRIDE',$5)`,
+      [sessionId, role, slotIndex, studentId, changedBy]
+    );
+    await client.query("UPDATE sessions SET status='Modified', updated_at=now() WHERE id=$1", [sessionId]);
+    return session.rows[0];
+  });
+}
+
 async function updateSessionStatus(sessionId, status) {
   return withTransaction(async (client) => {
     const row = await client.query('SELECT status FROM sessions WHERE id=$1 FOR UPDATE', [sessionId]);
@@ -294,10 +369,15 @@ module.exports = {
   generateSessionForDate,
   markUnavailable,
   manualOverride,
+  addExtraAssignment,
   finalizeSession,
   completeSession,
+  assignRolesToPool,
   expandRoleSlots,
+  getRoleStructureForDate,
   normalizeSessionDate,
+  previousSessionDateKey,
+  rotationExclusions,
   sessionDateKey,
   selectRotationPool,
 };

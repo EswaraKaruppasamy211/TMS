@@ -41,3 +41,36 @@ test('builds the tomorrow report with ordered role groups and separate OD/Leave 
   assert.match(report.text, /ON DUTY[\s\S]*Ravi[\s\S]*Replacement: Suresh/);
   assert.match(report.text, /LEAVE[\s\S]*Ajay/);
 });
+
+test('renders the Friday/Saturday groups and individual roles without weekday roles', () => {
+  const assignments = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      role: 'Group A',
+      student: { _id: `a${index}`, name: `Group A ${index + 1}` },
+    })),
+    ...Array.from({ length: 5 }, (_, index) => ({
+      role: 'Group B',
+      student: { _id: `b${index}`, name: `Group B ${index + 1}` },
+    })),
+    { role: 'Timer', student: { _id: 'timer', name: 'Timer Person' } },
+    { role: 'Counter', student: { _id: 'counter', name: 'Counter Person' } },
+    { role: 'Grammarian', student: { _id: 'grammarian', name: 'Grammarian Person' } },
+  ];
+  const report = buildSessionReport({
+    date: new Date('2026-09-25T00:00:00.000Z'),
+    status: 'Generated',
+    assignments,
+  });
+
+  assert.deepEqual(report.sections.map((section) => section.label), ['Group A', 'Group B']);
+  assert.equal(report.sections[0].assignments.length, 5);
+  assert.equal(report.sections[1].assignments.length, 5);
+  assert.equal(report.assignments.length, 13);
+  assert.equal(new Set(report.assignments.map((assignment) => assignment.studentId)).size, 13);
+  assert.deepEqual(report.otherRoles, [
+    { role: 'Timer', student: 'Timer Person' },
+    { role: 'Counter', student: 'Counter Person' },
+    { role: 'Grammarian', student: 'Grammarian Person' },
+  ]);
+  assert.match(report.text, /Group A[\s\S]*Group B[\s\S]*Timer: Timer Person[\s\S]*Counter: Counter Person[\s\S]*Grammarian: Grammarian Person/);
+});

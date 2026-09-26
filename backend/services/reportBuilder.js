@@ -41,8 +41,12 @@ function plainEntry(entry) {
 
 function buildSessionReport(session, { statusRecords = [], timezone = TIMEZONE } = {}) {
   const roles = session.assignments || [];
-  const groupedRoleNames = new Set(ROLE_GROUPS.map(([, role]) => role));
-  const preparedSections = ROLE_GROUPS.map(([label, role]) => ({
+  const hasWeekendGroups = roles.some((assignment) => assignment.role === 'Group A' || assignment.role === 'Group B');
+  const roleGroups = hasWeekendGroups
+    ? [['Group A', 'Group A'], ['Group B', 'Group B']]
+    : ROLE_GROUPS;
+  const groupedRoleNames = new Set(roleGroups.map(([, role]) => role));
+  const preparedSections = roleGroups.map(([label, role]) => ({
     label,
     assignments: roles.filter((assignment) => assignment.role === role).map(studentNameForAssignment),
   }));

@@ -142,6 +142,14 @@ function createApp() {
     await engine.manualOverride(sessionId, role, studentId, 'admin', slotIndex);
     res.json({ dashboard: await reports.getTomorrowDashboard() });
   }));
+  app.post('/api/extra-assignment', asyncRoute(async (req, res) => {
+    const { sessionId, role, studentId } = req.body || {};
+    if (!sessionId || !role || !studentId) {
+      return res.status(400).json({ error: 'Session, extra role, and student are required.' });
+    }
+    await engine.addExtraAssignment(sessionId, role, studentId, 'admin');
+    res.json({ dashboard: await reports.getTomorrowDashboard() });
+  }));
   app.post('/api/reports/:id/finalize', asyncRoute(async (req, res) => {
     await engine.finalizeSession(req.params.id);
     res.json({ dashboard: await reports.getTomorrowDashboard() });
@@ -154,7 +162,7 @@ function createApp() {
     if (res.headersSent) return next(error);
     const message = error.message || 'Request failed.';
     const status = error.code === '23505' ? 409
-      : (/Invalid session date|No eligible replacement|Cannot assign|Not enough eligible|capacity|Unsupported|not found|already|requires an available/.test(message) ? 400 : 500);
+      : (/Invalid session date|No eligible replacement|Cannot assign|Not enough eligible|capacity|Unsupported|not found|already|requires an available|Extra role name|Extra assignment/.test(message) ? 400 : 500);
     if (status === 500) console.error('Request failed:', error.code || error.name || 'unknown error');
     res.status(status).json({ error: status === 500
       ? 'Request failed. Check the server configuration and database.'
